@@ -102,16 +102,14 @@ def make_participant(name: str, sd: float = 1.0) -> Participant:
     
 """Event Processing"""
 
-# Event Indexes
-A = 0
-B = 1
-C = 2
-D = 3
+events_indx = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
 
-def run_single_trial(p_name: str, evidence = A, target = D, sd: float = 1.0) -> dict[str, NumDict]:
+def run_single_trial(p_name: str, evidence = 'A', target = 'D', sd: float = 1.0) -> dict[str, NumDict]:
+    evidence = events_indx[evidence]
+    target = events_indx[target]
     p, event = make_participant(p_name, sd=sd)
-    evidence = event[A]
-    target = event[D]
+    evidence = event[evidence]
+    target = event[target]
     nil = p.luk.rules.lhs.chunks.nil
     p.start_trial(timedelta())
     # print(f"{p_name} Starting Pool")
@@ -141,8 +139,8 @@ def run_single_trial(p_name: str, evidence = A, target = D, sd: float = 1.0) -> 
 
 def run_trials(n: int = 500,
                *,
-               evidence=A,
-               target=D,
+               evidence='A',
+               target='D',
                sd: float = 1.0) -> list[dict[str, NumDict]]:
     
     return [run_single_trial(f"p_{i}", evidence, target, sd) for i in range(n)]
