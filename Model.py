@@ -17,26 +17,6 @@ class Event(Atoms):
 class CausalModel(Family):
     event: Event
 
-d = CausalModel()
-event = d.event
-
-A = "A" ^ event.A ** event.A
-B = "B" ^ event.B ** event.B
-C = "C" ^ event.C ** event.C
-D = "D" ^ event.D ** event.D
-
-rules = [
-        # A -> B
-        "B_if_A" ^ 
-        A >> B,
-        # A -> C
-        "C_if_A" ^ 
-        A >> C ,
-        # B, C -> D
-        "D_if_B_AND_C" ^
-        (B, C) >> D
-    ]
-
 
 """Model Construction"""
     
@@ -48,6 +28,7 @@ class Participant(Agent):
     
     def __init__(self, name: str) -> None:
         p = Family()
+        d = CausalModel()
         
         super().__init__(name, p=p, d=d)
         
@@ -92,50 +73,84 @@ class Participant(Agent):
 """Knowledge Initialization"""
 
 def init_knowledge(participant: Participant) -> None:
+    event = participant.d.event
+    A = "A" ^ event.A ** event.A
+    B = "B" ^ event.B ** event.B
+    C = "C" ^ event.C ** event.C
+    D = "D" ^ event.D ** event.D
     # Learn the rules
+    rules = [
+        # A -> B
+        "B_if_A" ^ 
+        A >> B,
+        # A -> C
+        "C_if_A" ^ 
+        A >> C ,
+        # B, C -> D
+        "D_if_B_AND_C" ^
+        (B, C) >> D
+    ]
     participant.luk.rules.compile(*rules)
-    
+    return A, B, C, D
+
+def make_participant(name: str, sd: float = 1.0) -> Participant:
+    p = Participant(name)              
+    events = init_knowledge(p)             
+    with p.choice.params[0].mutable():
+        p.choice.params[0][~p.choice.p.sd] = sd
+    return p, events
     
 """Event Processing"""
 
-participant = Participant("participant")
-participant.luk.rules.compile(*rules)
-results = {
-    "condition": None,
-    "A": None,
-    "B": None,
-    "C": None,
-    "D": None,
-}
+# Event Indexes
+A = 0
+B = 1
+C = 2
+D = 3
 
-evidence = A
-target = D
-nil = participant.luk.rules.lhs.chunks.nil
+def run_single_trial(p_name: str, evidence = A, target = D, sd: float = 1.0) -> dict[str, NumDict]:
+    p, event = make_participant(p_name, sd=sd)
+    evidence = event[A]
+    target = event[D]
+    nil = p.luk.rules.lhs.chunks.nil
+    p.start_trial(timedelta())
+    # print(f"{p_name} Starting Pool")
+    # print(p.pool.main[0])
+    while p.system.queue:
+        event = p.system.advance()
+        if event.source == p.choice.select:
+            chosen = next(iter(p.choice.poll().values()))
+            if chosen in (~target, ~nil):
+                p.finish_trial(timedelta())
+            p.input.send({chosen: 1.0})
+        if event.source == p.start_trial:
+            p.input.send({evidence: 1.0})
+        if event.source == p.finish_trial:
+            # print(f"{p_name} End Pool")
+            # print(p.pool.main[0])
+            # print(f"{p_name} End Choice")
+            # print(chosen)
+            # print(f"{p_name} End Strengths")
+            # print(p.luk.main[0])
+            return {
+                    "chosen":    chosen,
+                    "strengths": p.luk.strengths[0]
+                }
 
-participant.start_trial(timedelta())
-# We'll send the event A to the working memory and try to retrieve the event D
-while participant.system.queue:
-    event = participant.system.advance()
-    print(event.describe())
-    if event.source == participant.choice.select:
-        print("WTF is Input Looking like")
-        print(participant.input.main[0])
-        print("Ok now I know")
-        print("WTF is Pool Looking like")
-        print(participant.pool.main[0])
-        print("Ok now I know")
-        picks = participant.choice.poll()
-        chosen = next(iter(participant.choice.poll().values()))
-        print("Pick:")
-        print(chosen)
-        if chosen in (~target, ~nil):
-            participant.finish_trial(timedelta())
-        else:
-            participant.input.send({chosen: 1.0})
-    if event.source == participant.start_trial:
-        participant.input.send({evidence: 1.0})
-    if event.source == participant.finish_trial:
-        print("Final:")
-        print(chosen)
-        print("Strengths:")
-        print(participant.luk.strengths[0])
+    raise RuntimeError("system.queue emptied without reaching target or nil")
+
+def run_trials(n: int = 500,
+               *,
+               evidence=A,
+               target=D,
+               sd: float = 1.0) -> list[dict[str, NumDict]]:
+    
+    return [run_single_trial(f"p_{i}", evidence, target, sd) for i in range(n)]
+
+
+if __name__ == "__main__":
+    outcomes = run_trials(100, sd=1.0)
+    for i, out in enumerate(outcomes, 1):
+        print(f"{i:>2}: {out['chosen']}")
+
+
