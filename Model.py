@@ -1,5 +1,5 @@
-from pyClarion import Atom, Atoms, Family, Agent, Input, Choice, Pool, Process, ChunkStore, NumDict, Site, Chunk, Priority, Rule, Event
-from lukasiewicz_rules import LukasiewiczRules, RuleStore2
+from pyClarion import Atom, Atoms, Family, Agent, Input, Choice, Pool, NumDict, Priority, Event
+from lukasiewicz_rules import LukasiewiczRules
 from datetime import timedelta
 
 """Keyspace Definition"""
@@ -22,9 +22,11 @@ class CausalModel(Family):
     
 class Participant(Agent):
     pool: Pool
+    p: Family
     d: CausalModel
     luk: LukasiewiczRules
     input: Input
+    choice: Choice
     
     def __init__(self, name: str) -> None:
         p = Family()
@@ -105,6 +107,7 @@ def make_participant(name: str, sd: float = 1.0) -> Participant:
 events_indx = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
 
 def run_single_trial(p_name: str, evidence = 'A', target = 'D', sd: float = 1.0) -> dict[str, NumDict]:
+    line_of_reasoning = ['A']
     evidence = events_indx[evidence]
     target = events_indx[target]
     p, event = make_participant(p_name, sd=sd)
@@ -118,9 +121,10 @@ def run_single_trial(p_name: str, evidence = 'A', target = 'D', sd: float = 1.0)
         event = p.system.advance()
         if event.source == p.choice.select:
             chosen = next(iter(p.choice.poll().values()))
+            line_of_reasoning.append(chosen[-1][0])
             if chosen in (~target, ~nil):
                 p.finish_trial(timedelta())
-            p.input.send({chosen: 1.0})
+            p.input.send({chosen: 1.0})         
         if event.source == p.start_trial:
             p.input.send({evidence: 1.0})
         if event.source == p.finish_trial:
@@ -131,7 +135,9 @@ def run_single_trial(p_name: str, evidence = 'A', target = 'D', sd: float = 1.0)
             # print(f"{p_name} End Strengths")
             # print(p.luk.main[0])
             return {
-                    "chosen":    chosen,
+                    "reasoning": line_of_reasoning,
+                    "chosen": chosen[-1][0],
+                    "match": chosen == ~target,
                     "strengths": p.luk.strengths[0]
                 }
 
@@ -147,8 +153,9 @@ def run_trials(n: int = 500,
 
 
 if __name__ == "__main__":
-    outcomes = run_trials(100, sd=1.0)
+    outcomes = run_trials(100, sd=0.5)
     for i, out in enumerate(outcomes, 1):
-        print(f"{i:>2}: {out['chosen']}")
+        print(f"{i}: {out['reasoning']}")
+        
 
 
