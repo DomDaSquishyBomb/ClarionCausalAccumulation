@@ -21,8 +21,7 @@ from pyClarion import (
     Event,
 )
 
-from lukasiewicz_rules import LukasiewiczRules
-import causal_knowledge  # contains structure‑specific rule sets
+from lukasiewicz_rules import ForwardInference, BackwardInference
 
 # ---------------------------------------------------------------------------#
 # Keyspace definition
@@ -36,13 +35,14 @@ class Event(Atoms):
     B: Atom
     C: Atom
     D: Atom
+    E: Atom
+    F: Atom
 
 
 class CausalModel(Family):
     """Family that groups events for the Luk rule store."""
 
     event: Event
-
 
 # ---------------------------------------------------------------------------#
 # Agent definition
@@ -68,18 +68,24 @@ class Participant(Agent):
     pool: Pool
     p: Family
     d: CausalModel
-    luk: LukasiewiczRules
+    luk: ForwardInference | BackwardInference
     input: Input
     choice: Choice
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, direction: str) -> None:
         p = Family()
         d = CausalModel()
+        
         super().__init__(name, p=p, d=d)
 
-        self.d = d  # re‑expose for typing
+        self.d = d 
         with self:
-            self.luk = LukasiewiczRules(f"{name}.luk", d, d, d, d)
+            if direction == "forward": # Instantiate both and put in a pool..
+                self.luk = ForwardInference(f"{name}.luk", d, d, d, d)
+            elif direction == "backward":
+                self.luk = BackwardInference(f"{name}.luk", d, d, d, d)
+            else:
+                raise ValueError(f"Unknown direction: {direction}")
             self.input = Input(
                 f"{name}.input", self.luk.rules.lhs.chunks, reset=False
             )
@@ -105,7 +111,7 @@ class Participant(Agent):
 
     def start_trial(  # noqa: D401  (imperative verb in summary is okay)
         self,
-        dt: timedelta,
+        dt: timedelta = timedelta(),
         priority: Priority = Priority.PROPAGATION,
     ) -> None:
         """Schedule the start of the next trial."""
@@ -113,7 +119,7 @@ class Participant(Agent):
 
     def finish_trial(
         self,
-        dt: timedelta,
+        dt: timedelta = timedelta(),
         priority: Priority = Priority.PROPAGATION,
     ) -> None:
         """Schedule the end of the current trial."""
@@ -129,6 +135,7 @@ def make_participant(
     name: str,
     structure: str = "diamond conjunction",
     sd: float = 1.0,
+    direction: str = "backward",
 ) -> tuple[Participant, list[Atom]]:
     """
     Initialise an SCR participant pre-loaded with causal knowledge.
@@ -139,7 +146,9 @@ def make_participant(
     events : list[Atom]
         Ordered [A, B, C, D] references for convenience.
     """
-    participant = Participant(name)
+    import causal_knowledge  # contains structure‑specific rule sets
+
+    participant = Participant(name, direction)
     events = causal_knowledge.init_knowledge(participant, structure)
 
     # Set noise level in the choice process
@@ -150,15 +159,16 @@ def make_participant(
 
 
 # Handy index map for event names ↔ integer position
-_events_index = {"A": 0, "B": 1, "C": 2, "D": 3}
+_events_index = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5}
 
 
 def run_single_trial(
     p_name: str,
     structure: str = "diamond conjunction",
-    evidence: str = "A",
-    target: str = "D",
+    evidence: str = "D",
+    target: str = "A",
     sd: float = 1.0,
+    direction: str = "backward",
 ) -> dict[str, NumDict]:
     """
     Run one reasoning episode and return trace information.
@@ -175,6 +185,8 @@ def run_single_trial(
         Correct terminal event (e.g., 'D').
     sd : float
         Standard deviation for stochastic choice.
+    direction : {"forward", "backward"}
+        Whether to use forward or backward reasoning.
 
     Returns
     -------
@@ -189,12 +201,12 @@ def run_single_trial(
     evidence_idx = _events_index[evidence]
     target_idx = _events_index[target]
 
-    p, events = make_participant(p_name, structure, sd)
+    p, events = make_participant(p_name, structure, sd, direction)
     evidence_atom = events[evidence_idx]
     target_atom = events[target_idx]
     nil_atom = p.luk.rules.lhs.chunks.nil
 
-    p.start_trial(timedelta())
+    p.start_trial()
 
     while p.system.queue:
         event = p.system.advance()
@@ -204,19 +216,21 @@ def run_single_trial(
             line.append(chosen[-1][0])
 
             if chosen in (~target_atom, ~nil_atom):
-                p.finish_trial(timedelta())
-
+                p.finish_trial()
+            
             p.input.send({chosen: 1.0})
 
         if event.source == p.start_trial:
             p.input.send({evidence_atom: 1.0})
 
         if event.source == p.finish_trial:
+            
             return {
                 "reasoning": line,
                 "chosen": chosen[-1][0],
                 "match": chosen == ~target_atom,
                 "strengths": p.luk.strengths[0],
+                "direction": direction,
             }
 
     raise RuntimeError("system.queue emptied without reaching target or nil")
@@ -228,6 +242,7 @@ def run_trials(
     evidence: str = "A",
     target: str = "D",
     sd: float = 1.0,
+    direction: str = "backward",
 ) -> list[dict[str, NumDict]]:
     """
     Simulate *n* independent participants on the same causal structure.
@@ -238,7 +253,7 @@ def run_trials(
         One summary dictionary per participant (see `run_single_trial`).
     """
     return [
-        run_single_trial(f"p_{i}", structure, evidence, target, sd)
+        run_single_trial(f"p_{i}", structure, evidence, target, sd, direction)
         for i in range(n)
     ]
 
@@ -248,6 +263,7 @@ def run_trials(
 # ---------------------------------------------------------------------------#
 
 if __name__ == "__main__":
-    outcomes = run_trials(100, "diamond conjunction", evidence="A", target="D", sd=0.5)
+    outcomes = run_trials(100, "net", evidence="C", target="A", sd=0.001, direction="backward")
     for i, out in enumerate(outcomes, 1):
         print(f"{i}: {out['reasoning']}")
+        
