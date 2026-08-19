@@ -1,0 +1,39 @@
+# Python virtual environment (lives at the repo root)
+bin/
+include/
+lib/
+share/
+pyvenv.cfg
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# Editor / tooling
+.vscode/
+.claude/
+
+# Vendored third-party framework (install separately, not part of this project)
+pyClarion/
+
+# Unrelated side project
+Gershmansim/
+
+# Superseded duplicate copy of this project
+COG403ClarionCausalAccumulation/
+COG403ClarionCausalAccumulation.zip
+
+# Old duplicate results backup (identical to top-level CSVs)
+OLD STATS APRIL62026/
+
+# LaTeX build artifacts
+report/*.aux
+report/*.bbl
+report/*.blg
+report/*.fff
+report/*.log
+report/*.out
+report/*.synctex.gz
