@@ -1,0 +1,8 @@
+pandas>=2.2
+numpy>=1.26
+scipy>=1.12
+matplotlib>=3.8
+seaborn>=0.13
+
+# pyClarion is vendored in pyClarion/ (see .gitignore) rather than pip-installed;
+# add it to your PYTHONPATH instead of installing it from this file.
